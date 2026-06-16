@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sims4mcp — save file inspector</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --border: #ddd;
+    --accent: #2d72d2;
+    --code-bg: #f0f0f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --fg: #e0e0e0;
+      --muted: #999;
+      --border: #333;
+      --accent: #5a9cff;
+      --code-bg: #1e1e1e;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: .25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 .75rem; }
+  p { margin-bottom: .75rem; }
+  pre {
+    background: var(--code-bg);
+    padding: 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: .875rem;
+    margin-bottom: 1rem;
+  }
+  code {
+    background: var(--code-bg);
+    padding: .1em .35em;
+    border-radius: 3px;
+    font-size: .875em;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+  }
+  th, td {
+    text-align: left;
+    padding: .5rem .75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  th { font-weight: 600; }
+  ul { padding-left: 1.25rem; margin-bottom: 1rem; }
+  li { margin-bottom: .25rem; }
+  .badge {
+    display: inline-block;
+    font-size: .75rem;
+    padding: .15rem .5rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 500;
+  }
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: .85rem;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>sims4mcp</h1>
+<p class="subtitle">CLI and MCP adapter for inspecting save files</p>
+
+<p>
+  sims4mcp parses binary save files and exposes the data through a
+  command-line interface and an MCP server. Extract Sims, households, traits,
+  careers, and relationships without opening the game.
+</p>
+
+<h2>Install</h2>
+<pre><code>pip install -e .</code></pre>
+
+<h2>CLI usage</h2>
+
+<table>
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td><code>sims4mcp info &lt;save&gt;</code></td><td>Overview — households and sim counts</td></tr>
+  <tr><td><code>sims4mcp sims &lt;save&gt;</code></td><td>Detailed per-sim data</td></tr>
+  <tr><td><code>sims4mcp sims --sim-id N &lt;save&gt;</code></td><td>Single sim by ID</td></tr>
+  <tr><td><code>sims4mcp households &lt;save&gt;</code></td><td>Household list with members and funds</td></tr>
+</table>
+
+<p>If no path is given, the latest save from the default directory is used.</p>
+
+<pre><code># Auto-detect latest save
+sims4mcp info
+
+# Inspect a specific file
+sims4mcp sims ~/saves/slot_00000002.save
+
+# Filter by sim ID
+sims4mcp sims --sim-id 123456 ~/saves/slot_00000002.save</code></pre>
+
+<h2>MCP server</h2>
+<p>Start the server over stdio:</p>
+<pre><code>mcp run src/sims4mcp/mcp_server.py</code></pre>
+<p>Exposed tools:</p>
+<ul>
+  <li><strong>list_households</strong> — all households with members and funds</li>
+  <li><strong>list_sims</strong> — all sims, optional household filter</li>
+  <li><strong>get_sim</strong> — full details for one sim (by ID or name)</li>
+  <li><strong>load_save</strong> — switch to a different save file</li>
+</ul>
+
+<h2>API</h2>
+<pre><code>from sims4mcp import load_save, SaveFile, Sim, Household
+
+sf = load_save("path/to/save.save")
+for hh in sf.households:
+    print(hh.name, hh.funds)
+    for sim in hh.sims:
+        print(f"  {sim.first_name} — {sim.age}")</code></pre>
+
+<h2>Data model</h2>
+<table>
+  <tr><th>Entity</th><th>Fields</th></tr>
+  <tr><td>SaveFile</td><td>path, name, households, sims (flattened)</td></tr>
+  <tr><td>Household</td><td>id, name, funds, sims</td></tr>
+  <tr><td>Sim</td><td>id, name, age, gender, traits, career, skills, moodlets, money, relationships</td></tr>
+</table>
+
+<h2>Limitations</h2>
+<ul>
+  <li>POC — binary field offsets may need tuning against real save files</li>
+  <li>Multi-sim saves: trait/career data uses the first resource found rather than filtering by sim instance</li>
+  <li>Read-only — no write or patch support</li>
+  <li>Game updates can shift the format</li>
+</ul>
+
+<h2>Tests</h2>
+<pre><code>pytest -v   # 28 tests, no real save file required</code></pre>
+
+<footer>
+  sims4mcp &mdash; MIT
+</footer>
+
+</div>
+</body>
+</html>
