@@ -70,6 +70,7 @@ class DBPFReader:
         self.path = path
         self._data = path.read_bytes()
         self._entries: list[IndexEntry] = []
+        self._data_offset = 0
         self._parse_header()
 
     def _parse_header(self) -> None:
@@ -93,40 +94,44 @@ class DBPFReader:
 
         raw_index = data[index_offset : index_offset + index_size]
         if index_compressed == COMPRESS_LZ4:
-            # LZ4 frame format
             raw_index = lz4.block.decompress(
                 raw_index[4:], uncompressed_size=index_size * 4
             )
 
+        # Data blocks start immediately after the index
+        self._data_offset = index_offset + index_size
+
         self._parse_index(raw_index, index_count)
 
     def _parse_index(self, raw: bytes, count: int) -> None:
-        """Parse index entries (each 20 bytes in v2)."""
-        entry_fmt = "<IIQHH"  # type_id, group_id, instance_lo, instance_hi, flags, size_compressed
-        entry_len = struct.calcsize(entry_fmt)  # 20
+        """Parse index entries (each 24 bytes in DBPF v2)."""
+        entry_fmt = "<IIIIII"  # type_id, group_id, instance_hi, instance_lo, compressed_size, flags
+        entry_len = struct.calcsize(entry_fmt)  # 24
+        data_offset = self._data_offset
         for i in range(count):
             offset = i * entry_len
             if offset + entry_len > len(raw):
                 break
             (type_id,
              group_id,
-             instance_lo,
              instance_hi,
-             flags,
-             compressed_size) = struct.unpack_from(entry_fmt, raw, offset)
+             instance_lo,
+             compressed_size,
+             flags) = struct.unpack_from(entry_fmt, raw, offset)
             compression = flags & 0xF
-            instance_id = (instance_hi << 32) | instance_lo
+            instance_id = (instance_hi << 32) | (instance_lo & 0xFFFFFFFF)
             self._entries.append(
                 IndexEntry(
                     type_id=type_id,
                     group_id=group_id,
                     instance_id=instance_id,
-                    offset=0,
-                    size=0,
+                    offset=data_offset,
+                    size=compressed_size,
                     compressed_size=compressed_size,
                     compression=compression,
                 )
             )
+            data_offset += compressed_size
 
     def get_resource(self, type_id: int) -> bytes | None:
         """Find the first resource of *type_id*, decompress and return it."""
@@ -145,31 +150,12 @@ class DBPFReader:
 
     def _decompress_entry(self, entry: IndexEntry) -> bytes:
         """Read and decompress a single index entry."""
-        data_len = entry.compressed_size
         raw = self._data
+        start = entry.offset
+        end = start + entry.compressed_size
+        compressed = raw[start:end]
 
-        # Find the actual data offset — after the index we need to scan.
-        # In practice the data follows the index, but we reconstruct it from
-        # a running offset.  For safety, use a heuristic: start reading after
-        # the index area.
-        # === simplified: assume resources follow the index sequentially ===
-        # A real parser would store offsets during index parsing.  For the
-        # scaffold we approximate by reading the bytes at the expected region.
-        # The proper approach is to parse the HOFF (hole-offset) table — but
-        # for POC purposes we locate resources by scanning past the header +
-        # index.
-        idx_end = (
-            DBPF_HEADER_LEN
-            + 24  # remaining v2 header fields
-            + len(self._entries) * 20
-        )
-        # Try to find the resource at its expected location (size-based heuristic)
-        buf = raw[idx_end:]
-        if entry.offset and entry.offset < len(raw):
-            buf = raw[entry.offset:]
-
-        compressed = buf[:data_len]
-        if entry.compression == COMPRESS_LZ4 and data_len > 4:
+        if entry.compression == COMPRESS_LZ4 and len(compressed) > 4:
             try:
                 return lz4.block.decompress(compressed[4:])
             except Exception:
