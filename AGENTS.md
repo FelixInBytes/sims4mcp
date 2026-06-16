@@ -15,9 +15,13 @@ Entrypoints:
 
 ```sh
 pip install -e .                    # install in editable mode
+pytest -v                            # run all tests (no config needed)
+pytest tests/ -k "dbpf or cli"     # run a focused subset
 python -m sims4mcp info <save>     # CLI usage
 mcp run src/sims4mcp/mcp_server.py # start MCP server over stdio
 ```
+
+No test save files needed in repo — synthetic DBPF fixtures are in `tests/conftest.py`.
 
 ## Architecture
 
@@ -52,7 +56,8 @@ Files are `.save` or `.save.ver{N}` (versioned backups). Format: DBPF v2 with LZ
 
 ## Quirks / gotchas
 
-- **No test save files in repo** — testing requires a real save or a minimal DBPF fixture
+- **No test save files in repo** — synthetic DBPF fixtures are in `tests/conftest.py`
 - Resource alignment in DBPF is approximated; the offset table is not fully parsed by the scaffold
+- Trait/career resources are keyed by Sim instance ID; the current parser reads the *first* resource of each type, which is incorrect for multi-Sim saves — needs filtering by `instance_id`
 - Trait/career resources are keyed by Sim instance ID; the current parser reads the *first* resource of each type, which is incorrect for multi-Sim saves — needs filtering by `instance_id`
 - `mcp>=1.0` may not exist on PyPI yet; pin to `mcp>=0.1` if MCP SDK uses different version scheme
